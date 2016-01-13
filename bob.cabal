@@ -1,0 +1,35 @@
+Name:                bob
+Version:             0.1
+Synopsis:            Project Synopsis Here
+Description:         Project Description Here
+License:             AllRightsReserved
+Author:              Author
+Maintainer:          maintainer@example.com
+Stability:           Experimental
+Category:            Web
+Build-type:          Simple
+Cabal-version:       >=1.2
+
+Executable bob
+  hs-source-dirs: src
+  main-is: Main.hs
+  ghc-options: -threaded -O2
+  
+  other-modules: Manifest
+               , Sync
+               , Types
+               
+  Build-depends: aeson
+               , base
+               , bytestring
+               , directory
+               , filepath
+               , lens
+               , text
+               , wreq
+               , unix-compat
+               , connection
+               , data-default
+               , http-conduit
+               , network-uri
+               , cryptohash
