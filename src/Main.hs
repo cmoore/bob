@@ -1,6 +1,7 @@
 
 module Main where
 
+import           Control.Monad.State
 import           System.Console.GetOpt
 import           System.Environment
 
@@ -11,5 +12,5 @@ import           Types
 main :: IO ()
 main = do
   options <- getArgs >>= bob_options
-  handle_manifest options
-  handle_sync options
+  runStateT (handle_manifest >> handle_sync) options
+  return ()

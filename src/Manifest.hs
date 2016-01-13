@@ -3,6 +3,7 @@
 module Manifest (handle_manifest) where
 
 import           Control.Monad
+import           Control.Monad.State
 import           Data.Aeson
 import qualified Data.ByteString.Char8      as BS
 import qualified Data.ByteString.Lazy.Char8 as BSL
@@ -12,17 +13,19 @@ import           System.FilePath
 import           Types
 
 
-handle_manifest :: BOptions -> IO ()
-handle_manifest opts = do
+handle_manifest :: BState ()
+handle_manifest = do
+  opts <- get
   case (,) <$> (opt_generate opts) <*> (opt_gen_base opts) of
     Nothing -> return ()
     Just (gen,base) -> do
-      putStrLn "Generating manifest from current directory."
-      files <- walk_directory $ BFilePath base Nothing False
-      BSL.writeFile gen $ encode $ Manifest files "0.0.1"
- where
-   walk_directory :: BFilePath -> IO [BFilePath]
-   walk_directory bf = do
+      lift $ putStrLn "Generating manifest from current directory."
+      files <- lift $ walk_directory $ BFilePath base Nothing False
+      lift $ BSL.writeFile gen $ encode $ Manifest files "0.0.1"
+      return ()
+
+walk_directory :: BFilePath -> IO [BFilePath]
+walk_directory bf = do
      let the_filepath = bf_filepath bf
      names <- getDirectoryContents the_filepath
      let names' = filter (`notElem` [".", ".."]) names

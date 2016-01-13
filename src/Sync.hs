@@ -3,6 +3,8 @@
 module Sync (handle_sync) where
 
 import           Control.Lens               hiding ((.=))
+import           Control.Monad
+import           Control.Monad.State
 import           Data.Aeson
 import qualified Data.ByteString.Lazy.Char8 as BS
 import           Data.Default
@@ -10,7 +12,7 @@ import           Data.Maybe                 (fromMaybe)
 import           Network.Connection
 import           Network.HTTP.Conduit       hiding (responseBody,
                                              responseStatus)
-import           Network.Wreq
+import qualified Network.Wreq               as W
 import qualified Network.Wreq.Types         as WT
 import           System.Directory
 import           System.FilePath
@@ -18,72 +20,82 @@ import           System.IO
 
 import           Types
 
-request_options :: IO WT.Options
-request_options = do
-  lx <- newManager $ mkManagerSettings tls_settings Nothing
-  return $ defaults { WT.manager = Right lx }
+
+get_file :: FilePath -> BState BS.ByteString
+get_file fp = do
+  ropt <- lift request_options
+  conf <- get
+  case opt_url_base conf of
+    Nothing -> error "Need to supply the -u option."
+    Just ubase -> do
+      let filename = ubase ++ fp
+      rq <- lift $ W.getWith ropt filename
+      return $ rq ^. W.responseBody
  where
+   request_options :: IO WT.Options
+   request_options = do
+     lx <- newManager $ mkManagerSettings tls_settings Nothing
+     return $ W.defaults { WT.manager = Right lx }
    tls_settings :: TLSSettings
    tls_settings = def { settingDisableCertificateValidation = True }
 
-get_file :: FilePath -> IO BS.ByteString
-get_file fp = do
-  ropt <- request_options
-  let filename = "https://tools.ivy.io/" ++ fp
-  rq <- getWith ropt filename
-  return $ rq ^. responseBody
-
-rebuild_filesystem :: BOptions -> Manifest -> FilePath -> IO ()
-rebuild_filesystem opts manifest destination = do
-  hSetBuffering stdout NoBuffering
-  putStrLn "Syncing."
-  _ <- mapM (handle_file (sbase opts) destination) (mf_files manifest)
-  putStrLn " "
+rebuild_filesystem :: Manifest -> FilePath -> BState ()
+rebuild_filesystem manifest destination = do
+  lift $ do
+    hSetBuffering stdout NoBuffering
+    putStrLn "Syncing."
+  conf <- get
+  _ <- mapM (handle_file (sbase conf) destination) (mf_files manifest)
+  lift $ putStrLn " "
  where
    sbase :: BOptions -> String
    sbase opts = fromMaybe "out" (opt_sync_base opts)
 
-handle_file :: FilePath -> FilePath -> BFilePath -> IO ()
+handle_file :: FilePath -> FilePath -> BFilePath -> BState ()
 handle_file outd destination (BFilePath file fhash exec) = do
   let outdir = combine outd (takeDirectory file)
       localfile = destination </> normalise file
-  de <- doesFileExist localfile
+  de <- lift $ doesFileExist localfile
   case de of
-    True -> check_hash fhash file outdir localfile
-    False -> download_file file outdir localfile
+    True -> do
+      check_hash fhash file outdir localfile
+      return ()
+    False -> do
+      download_file file outdir localfile
+      return ()
  where
-   download_file :: FilePath -> FilePath -> FilePath -> IO ()
+   download_file :: FilePath -> FilePath -> FilePath -> BState ()
    download_file file outdir localfile = do
-      contents <- get_file file
-      createDirectoryIfMissing True outdir
-      BS.writeFile localfile contents
-      case exec of
-        False -> putStr "+"
-        True -> do
-          lx <- getPermissions localfile
-          setPermissions localfile (setOwnerExecutable True lx)
-          putStr "*"
+     contents <- get_file file
+     lift $ createDirectoryIfMissing True outdir
+     lift $ BS.writeFile localfile contents
+     case exec of
+       False -> lift $ putStr "+"
+       True -> do
+         lx <- lift $ getPermissions localfile
+         lift $ setPermissions localfile (setOwnerExecutable True lx)
+         lift $ putStr "*"
 
-   check_hash :: (Maybe String) -> FilePath -> FilePath -> FilePath -> IO ()
-   check_hash Nothing _ _ _ = putStr "*"
+   check_hash :: (Maybe String) -> FilePath -> FilePath -> FilePath -> BState ()
+   check_hash Nothing _ _ _ = lift $ putStr "*"
    check_hash (Just fhash) file outdir localfile = do
-     h <- hash_file localfile
+     h <- lift $ hash_file localfile
      case h == fhash of
-       True -> putStr "-"
+       True -> lift $ putStr "-"
        False -> download_file file outdir localfile
 
-
-
-handle_sync :: BOptions -> IO ()
-handle_sync opts =
+handle_sync :: BState ()
+handle_sync = do
+  opts <- get
   case (,) <$> (opt_sync opts) <*> (opt_sync_base opts) of
     Nothing -> return ()
     Just (remote_url,dest_directory) -> do
-      putStrLn "Fetching manifest."
-      request <- get remote_url
-      case request ^. responseStatus ^. statusCode of
+      lift $ putStrLn "Fetching manifest."
+      request <- lift $ W.get remote_url
+      case request ^. W.responseStatus ^. W.statusCode of
         200 ->
-          case decode (request ^. responseBody) of
+          case decode (request ^. W.responseBody) of
             Nothing -> error "Found manifest, but can't decode it."
-            Just mn -> rebuild_filesystem opts mn dest_directory
+            Just mn -> rebuild_filesystem mn dest_directory
         b -> error $ "Response code: " ++ show b
+

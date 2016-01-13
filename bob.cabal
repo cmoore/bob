@@ -33,3 +33,4 @@ Executable bob
                , http-conduit
                , network-uri
                , cryptohash
+               , mtl
