@@ -9,9 +9,11 @@ import qualified Crypto.Hash.SHA1           as SH
 import           Data.Aeson
 import qualified Data.ByteString.Char8      as BS
 import qualified Data.ByteString.Lazy.Char8 as BSL
+import           Data.Default
 import qualified Data.Text                  as T
 import           System.Console.GetOpt
 import           System.FilePath
+
 
 type BState a = StateT BOptions IO a
 
@@ -59,8 +61,8 @@ data BOptions = BOptions { opt_verbose   :: Bool
                          , opt_url_base  :: Maybe String }
                 deriving (Show)
 
-default_options :: BOptions
-default_options = BOptions False Nothing Nothing Nothing Nothing Nothing
+instance Default BOptions where
+  def = BOptions False Nothing Nothing Nothing Nothing Nothing
 
 cmd_options :: [OptDescr (BOptions -> BOptions)]
 cmd_options =
@@ -79,7 +81,7 @@ cmd_options =
 bob_options :: [String] -> IO BOptions
 bob_options argv =
   case getOpt Permute cmd_options argv of
-    (g,_,[]) -> return $ foldl (flip id) default_options g
+    (g,_,[]) -> return $ foldl (flip id) def g
     (_,_,err) -> ioError (userError (concat err ++ usageInfo header cmd_options))
  where
    header :: String
